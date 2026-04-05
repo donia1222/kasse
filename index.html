@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Kasse · US-Fishing &amp; Huntingshop</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2C5F2E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kasse">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<script>
+// Detectar si se abre como recibo via QR
+(function(){
+  const p = new URLSearchParams(location.search).get('receipt')
+  if (!p) return
+  try {
+    const d = JSON.parse(decodeURIComponent(escape(atob(p))))
+    document.addEventListener('DOMContentLoaded', () => showReceiptPage(d))
+  } catch(e) {}
+})()
+</script>
+<body>
+
+<div id="loading"><div class="spinner"></div><p>Produkte werden geladen…</p></div>
+
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- LEFT -->
+  <div id="left">
+
+    <!-- Scanner -->
+    <div id="scanner-box">
+      <div id="scanner-inner">
+        <div id="barcode-wrap">
+          <span class="icon">⚡</span>
+          <input id="barcode" type="text" placeholder="Barcode scannen + Enter…" autocomplete="off" autofocus/>
+          <div id="flash-msg"></div>
+        </div>
+        <div id="search-wrap">
+          <i class="fa-solid fa-magnifying-glass icon"></i>
+          <input id="search" type="text" placeholder="Suchen…"/>
+        </div>
+        <button id="admin-btn" onclick="showTagesabschluss()" title="Admin"><i class="fa-solid fa-gear"></i></button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+
+    <!-- Categories -->
+    <div id="cat-box">
+      <div id="cat-tabs"></div>
+      <div id="cat-products"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div id="right">
+
+    <!-- PANEL 1: Warenkorb -->
+    <div id="panel-cart">
+      <div id="cart-box">
+        <div id="cart-header">
+          <div class="title">
+            Warenkorb
+            <div id="cart-badge"></div>
+          </div>
+<button id="clear-btn" onclick="clearCart()">↺ Löschen</button>
+        </div>
+        <div id="cart-items">
+          <div id="cart-empty"><div class="icon">🛒</div><p>Keine Artikel</p></div>
+        </div>
+      </div>
+      <button id="pay-open-btn" onclick="showPanel('pay')" disabled>
+        <span>Bezahlen</span>
+        <div class="right"><span class="sub" id="pay-open-total">CHF 0.00</span> ›</div>
+      </button>
+    </div>
+
+    <!-- PANEL 2: Zahlung -->
+    <div id="panel-pay" style="display:none">
+      <button id="back-btn" onclick="showPanel('cart')">‹ Warenkorb</button>
+
+      <div id="total-box">
+        <div class="label">Gesamtbetrag</div>
+        <div id="total-amount">0.00 <span>CHF</span></div>
+        <div id="total-details">
+          <p><span id="td-items">0 Artikel</span><span id="td-sub">CHF 0.00</span></p>
+          <p><span>MwSt. 8.1%</span><span id="td-vat">CHF 0.00</span></p>
+        </div>
+      </div>
+
+      <div id="pay-box">
+        <div class="label">Zahlungsart</div>
+        <div id="pay-grid">
+          <button class="pay-btn active" data-pay="cash"    onclick="setPay('cash')"><i class="fa-solid fa-money-bill-wave"></i> Bar</button>
+          <button class="pay-btn"        data-pay="card"    onclick="setPay('card')"><i class="fa-solid fa-credit-card"></i> Karte</button>
+          <button class="pay-btn"        data-pay="twint"   onclick="setPay('twint')"><i class="fa-solid fa-mobile-screen"></i> TWINT</button>
+          <button class="pay-btn"        data-pay="invoice" onclick="setPay('invoice')"><i class="fa-solid fa-file-invoice"></i> Rechnung</button>
+        </div>
+      </div>
+
+      <div id="cash-box" class="visible">
+        <div class="label">Bargeld erhalten</div>
+        <div id="cash-input-wrap">
+          <span class="cur">CHF</span>
+          <input id="cash-input" type="number" placeholder="0.00" oninput="updateChange()"/>
+        </div>
+        <div id="quick-amounts"></div>
+        <div id="change-display">
+          <span id="change-label">Rückgeld</span>
+          <span id="change-amount">CHF 0.00</span>
+        </div>
+      </div>
+
+      <div id="spacer"></div>
+
+      <button id="confirm-btn" onclick="confirmSale()" disabled>
+        <span>Verkauf abschliessen</span>
+        <div class="right"><span class="sub" id="confirm-total">CHF 0.00</span> ›</div>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- PIN LOCK -->
+<div id="pin-overlay">
+  <div id="pin-card">
+    <div id="pin-logo"><i class="fa-solid fa-lock"></i></div>
+    <h2>US-Fishing Kasse</h2>
+    <span id="pin-subtitle">PIN eingeben</span>
+    <div id="pin-dots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div id="pin-pad">
+      <button class="pad-btn" onclick="pinPress('1')">1</button>
+      <button class="pad-btn" onclick="pinPress('2')">2</button>
+      <button class="pad-btn" onclick="pinPress('3')">3</button>
+      <button class="pad-btn" onclick="pinPress('4')">4</button>
+      <button class="pad-btn" onclick="pinPress('5')">5</button>
+      <button class="pad-btn" onclick="pinPress('6')">6</button>
+      <button class="pad-btn" onclick="pinPress('7')">7</button>
+      <button class="pad-btn" onclick="pinPress('8')">8</button>
+      <button class="pad-btn" onclick="pinPress('9')">9</button>
+      <button class="pad-btn pad-del" onclick="pinPress('⌫')"><i class="fa-solid fa-delete-left"></i></button>
+      <button class="pad-btn" onclick="pinPress('0')">0</button>
+      <button class="pad-btn" style="opacity:0;pointer-events:none"></button>
+    </div>
+  </div>
+</div>
+
+<!-- MANUAL ENTRY -->
+<div id="manual-overlay">
+  <div id="manual-card">
+    <div id="manual-display">
+      <span id="manual-desc-display"></span>
+      <span id="manual-amount-display">0.00</span>
+    </div>
+    <input id="manual-desc" type="text" placeholder="Bezeichnung (optional)"/>
+    <div id="manual-pad">
+      <button class="pad-btn" onclick="padPress('7')">7</button>
+      <button class="pad-btn" onclick="padPress('8')">8</button>
+      <button class="pad-btn" onclick="padPress('9')">9</button>
+      <button class="pad-btn" onclick="padPress('4')">4</button>
+      <button class="pad-btn" onclick="padPress('5')">5</button>
+      <button class="pad-btn" onclick="padPress('6')">6</button>
+      <button class="pad-btn" onclick="padPress('1')">1</button>
+      <button class="pad-btn" onclick="padPress('2')">2</button>
+      <button class="pad-btn" onclick="padPress('3')">3</button>
+      <button class="pad-btn" onclick="padPress('.')">.</button>
+      <button class="pad-btn" onclick="padPress('0')">0</button>
+      <button class="pad-btn pad-del" onclick="padPress('⌫')"><i class="fa-solid fa-delete-left"></i></button>
+    </div>
+    <div id="manual-actions">
+      <button id="manual-cancel" onclick="closeManual()">Abbrechen</button>
+      <button id="manual-add" onclick="addManual()"><i class="fa-solid fa-plus"></i> Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div id="success-overlay">
+  <div id="success-card">
+    <div id="success-icon">✅</div>
+    <h2>Verkauf abgeschlossen</h2>
+    <p id="success-meta"></p>
+    <div id="success-total">CHF 0.00</div>
+
+    <div id="success-actions">
+      <button id="btn-print" onclick="printTicket()"><i class="fa-solid fa-print"></i> Bon drucken</button>
+      <button id="btn-qr" onclick="showReceiptQR()"><i class="fa-solid fa-qrcode"></i> QR-Bon senden</button>
+      <button id="btn-close" onclick="closeSale()"><i class="fa-solid fa-check"></i> Fertig</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="ta-overlay">
+  <div id="ta-card">
+    <div id="ta-header">
+      <h2><i class="fa-solid fa-chart-bar"></i> Admin</h2>
+      <button id="ta-close-x" onclick="closeTagesabschluss()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="ta-tabs">
+      <button class="ta-tab active" data-tab="today" onclick="switchTaTab('today')"><i class="fa-solid fa-calendar-day"></i> Heute</button>
+      <button class="ta-tab" data-tab="week" onclick="switchTaTab('week')"><i class="fa-solid fa-calendar-week"></i> Woche</button>
+      <button class="ta-tab" data-tab="products" onclick="switchTaTab('products')"><i class="fa-solid fa-box"></i> Produkte</button>
+      <button class="ta-tab" data-tab="admin" onclick="switchTaTab('admin')"><i class="fa-solid fa-gear"></i> Admin</button>
+    </div>
+    <div id="ta-content">
+      <div id="ta-tab-today" class="ta-tab-panel"></div>
+      <div id="ta-tab-week" class="ta-tab-panel" style="display:none"></div>
+      <div id="ta-tab-products" class="ta-tab-panel" style="display:none"></div>
+      <div id="ta-tab-admin" class="ta-tab-panel" style="display:none"></div>
+    </div>
+    <div id="ta-footer">
+      <button id="ta-close-btn" onclick="closeTagesabschluss()"><i class="fa-solid fa-check"></i> Schliessen</button>
+      <button id="ta-print-btn" onclick="printTagesabschluss()"><i class="fa-solid fa-print"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- QR OVERLAY -->
+<div id="qr-overlay">
+  <div id="qr-card">
+    <div id="qr-header">
+      <div id="qr-title"><i class="fa-solid fa-qrcode"></i> QR-Bon</div>
+      <button id="qr-close-btn" onclick="closeQR()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="qr-meta"></div>
+    <div id="qr-canvas-wrap">
+      <div id="qr-container"></div>
+    </div>
+    <p id="qr-url"></p>
+    <p id="qr-hint">Mit dem Handy scannen, um den Bon zu öffnen</p>
+    <button id="qr-done-btn" onclick="closeQR()"><i class="fa-solid fa-check"></i> Fertig</button>
+  </div>
+</div>
+
+<!-- TICKET (solo visible al imprimir) -->
+<div id="ta-ticket"></div>
+
+<div id="ticket">
+  <div class="tk-shop">US-Fishing &amp; Huntingshop</div>
+  <div class="tk-sub">Kasse · Sevelen</div>
+  <div class="tk-line"></div>
+  <div id="tk-meta"></div>
+  <div class="tk-line"></div>
+  <div id="tk-items"></div>
+  <div class="tk-line"></div>
+  <div id="tk-total"></div>
+  <div id="tk-change"></div>
+  <div class="tk-line"></div>
+  <div class="tk-footer">Danke für Ihren Einkauf!</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
