@@ -1,5 +1,6 @@
 const API = 'https://web.lweb.ch/templettedhop/'
 let products = [], categories = [], cart = [], activeCat = null, payMethod = 'cash', bonNo = 1042
+let soundEnabled = localStorage.getItem('kasse_sound') !== 'off'
 
 // Imágenes locales por categoría (keyword → archivo en /images/)
 const CAT_LOCAL_IMAGES = {
@@ -70,21 +71,31 @@ function getCatLocalImage(name) {
 }
 
 
-// ── Image preload ─────────────────────────────────────────────────────────────
-function preloadImages() {
-  const urls = new Set()
-  products.forEach(p => { const img = firstImage(p); if (img) urls.add(img) })
-  urls.forEach(url => { const i = new Image(); i.src = url })
+// ── Image helpers ──────────────────────────────────────────────────────────────
+// Si una URL no tiene extensión, probamos las variantes más comunes (igual que hot-sauce ProductImage)
+const IMG_EXTS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.webp']
+const HAS_IMG_EXT = /\.(jpg|jpeg|png|gif|webp|svg|JPG|JPEG|PNG)$/i
+
+function expandUrl(url) {
+  if (!url) return []
+  return HAS_IMG_EXT.test(url) ? [url] : IMG_EXTS.map(ext => url + ext)
 }
 
-// ── Image helpers ──────────────────────────────────────────────────────────────
+// Caché en memoria: recuerda qué URL concreta funcionó para no reintentar extensiones fallidas
+const resolvedImgCache = {}
+
 function getImages(p) {
+  const cached = resolvedImgCache[p.id]
+  if (cached) return [cached]
+
   const fromUrls = Array.isArray(p.image_urls) ? p.image_urls.filter(Boolean) : []
   const fromCandidates = Array.isArray(p.image_url_candidates) ? p.image_url_candidates.filter(Boolean) : []
-  const all = [...fromUrls]
-  if (p.image_url) all.push(p.image_url)
-  all.push(...fromCandidates)
-  return [...new Set(all)]
+  const raw = [...fromUrls]
+  if (p.image_url) raw.push(p.image_url)
+  raw.push(...fromCandidates)
+  const expanded = []
+  for (const u of [...new Set(raw)]) expanded.push(...expandUrl(u))
+  return [...new Set(expanded)]
 }
 
 function firstImage(p) { return getImages(p)[0] || '' }
@@ -166,7 +177,6 @@ async function load() {
     } // end else (no rate-limit)
   }
 
-  preloadImages()
   document.getElementById('loading').style.display = 'none'
   renderCategories()
   checkPin()
@@ -218,12 +228,12 @@ function renderCategories() {
     btn.className = 'cat-banner'
     btn.dataset.slug = cat.slug
     const localImg = getCatLocalImage(cleanName)
-    const iconHtml = localImg
+    const bgHtml = localImg
       ? `<img src="${localImg}" alt="${cleanName}" class="cat-banner-img">`
-      : emoji
+      : `<div class="cat-banner-icon-wrap">${emoji}</div>`
     btn.innerHTML = `
-      <div class="cat-banner-icon ${localImg ? 'cat-banner-icon-img' : ''}">${iconHtml}</div>
-      <div class="cat-banner-info">
+      <div class="cat-banner-bg">${bgHtml}</div>
+      <div class="cat-banner-overlay">
         <span class="cb-name">${cleanName}</span>
         <span class="cb-count">${count}</span>
       </div>`
@@ -234,8 +244,8 @@ function renderCategories() {
   const manBtn = document.createElement('button')
   manBtn.className = 'cat-banner cat-banner-manual'
   manBtn.innerHTML = `
-    <div class="cat-banner-icon" style="background:rgba(44,95,46,.1)"><i class="fa-solid fa-pen"></i></div>
-    <div class="cat-banner-info">
+    <div class="cat-banner-bg"><div class="cat-banner-icon-wrap"><i class="fa-solid fa-calculator"></i></div></div>
+    <div class="cat-banner-overlay">
       <span class="cb-name">Manuell</span>
       <span class="cb-count">+</span>
     </div>`
@@ -249,53 +259,73 @@ const catDomCache = {}
 function buildCatNode(slug) {
   const cat = categories.find(c => c.slug === slug)
   const prods = products.filter(p => p.category === slug || (cat && p.category === cat.name))
-  const div = document.createElement('div')
-  div.style.display = 'contents'
-  div.innerHTML = prods.map(p => {
+  const grid = document.createElement('div')
+  grid.className = 'prod-grid'
+  grid.innerHTML = prods.map(p => {
     const imgs = getImages(p)
     const imgTag = imgs.length > 0
-      ? `<img src="${imgs[0]}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" onerror="prodImgError(this)" alt="${p.name}">`
+      ? `<img src="${imgs[0]}" data-pid="${p.id}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" loading="lazy" onload="prodImgLoad(this)" onerror="prodImgError(this)" alt="${p.name}">`
       : `<div class="prod-no-img">📦</div>`
     return `
     <button class="prod-btn ${(p.stock || 0) === 0 ? 'out' : ''}" onclick="addToCart(${p.id})">
       <div class="prod-img-wrap">${imgTag}</div>
-      <div class="pname">${p.name}</div>
-      <div class="pinfo">CHF ${parseFloat(p.price).toFixed(2)}</div>
-      <div class="pstock">${(p.stock || 0) > 0 ? `${p.stock} Stk auf Lager` : 'Ausverkauft'}</div>
+      <div class="prod-info-wrap">
+        <div class="pname">${p.name}</div>
+        <div class="pinfo">CHF ${parseFloat(p.price).toFixed(2)}</div>
+        <div class="pstock">${(p.stock || 0) > 0 ? `${p.stock} Stk` : 'Ausverkauft'}</div>
+      </div>
     </button>`
   }).join('')
-  return div
+  return grid
 }
 
 function toggleCat(slug) {
   const el = document.getElementById('cat-products')
+  const tabs = document.getElementById('cat-tabs')
+  const header = document.getElementById('cat-header')
+  const headerName = document.getElementById('cat-header-name')
 
   // Ocultar categoría activa anterior
   if (activeCat && catDomCache[activeCat]) {
     catDomCache[activeCat].style.display = 'none'
   }
 
-  if (activeCat === slug) {
-    activeCat = null
-    el.classList.remove('visible')
-    document.querySelectorAll('.cat-banner').forEach(t => t.classList.remove('active'))
-    return
-  }
-
   activeCat = slug
-  document.querySelectorAll('.cat-banner').forEach(t => {
-    t.classList.toggle('active', t.dataset.slug === slug)
-  })
+  const cat = categories.find(c => c.slug === slug)
+  const cleanName = cat ? cat.name.replace(/\s*\d{4}$/, '') : slug
+
+  // Ocultar grid de categorías, mostrar header con nombre + botón volver
+  tabs.style.display = 'none'
+  headerName.textContent = cleanName
+  header.style.display = 'flex'
 
   // Crear nodo DOM la primera vez, luego solo mostrar
   if (!catDomCache[slug]) {
     catDomCache[slug] = buildCatNode(slug)
     el.appendChild(catDomCache[slug])
   } else {
-    catDomCache[slug].style.display = 'contents'
+    catDomCache[slug].style.display = 'grid'
   }
-
   el.classList.add('visible')
+}
+
+function backToCats() {
+  const el = document.getElementById('cat-products')
+  const tabs = document.getElementById('cat-tabs')
+  const header = document.getElementById('cat-header')
+
+  if (activeCat && catDomCache[activeCat]) {
+    catDomCache[activeCat].style.display = 'none'
+  }
+  activeCat = null
+  el.classList.remove('visible')
+  header.style.display = 'none'
+  tabs.style.display = ''
+}
+
+function prodImgLoad(img) {
+  const pid = img.dataset.pid
+  if (pid && img.src) resolvedImgCache[pid] = img.src
 }
 
 function prodImgError(img) {
@@ -307,6 +337,15 @@ function prodImgError(img) {
 }
 
 // ── Beep ──────────────────────────────────────────────────────────────────────
+// AudioContext compartido — se crea una vez en el primer gesto del usuario
+// Evita el delay de inicialización en iOS/iPad que causaba beeps tardíos
+let _audioCtx = null
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  return _audioCtx
+}
+
 function _tone(ctx, freq, start, dur, vol = 0.3) {
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -318,16 +357,14 @@ function _tone(ctx, freq, start, dur, vol = 0.3) {
 }
 
 function beep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    _tone(ctx, 1200, ctx.currentTime, 0.12)
-  } catch {}
+  if (!soundEnabled) return
+  try { const ctx = getAudioCtx(); _tone(ctx, 1200, ctx.currentTime, 0.12) } catch {}
 }
 
 function beepPay() {
+  if (!soundEnabled) return
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const t = ctx.currentTime
+    const ctx = getAudioCtx(); const t = ctx.currentTime
     _tone(ctx, 880,  t,        0.10, 0.25)
     _tone(ctx, 1100, t + 0.12, 0.10, 0.25)
     _tone(ctx, 1320, t + 0.24, 0.13, 0.30)
@@ -335,14 +372,20 @@ function beepPay() {
 }
 
 function beepConfirm() {
+  if (!soundEnabled) return
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const t = ctx.currentTime
+    const ctx = getAudioCtx(); const t = ctx.currentTime
     _tone(ctx, 880,  t,        0.10, 0.20)
     _tone(ctx, 1100, t + 0.11, 0.10, 0.20)
     _tone(ctx, 1320, t + 0.22, 0.10, 0.20)
     _tone(ctx, 1760, t + 0.33, 0.18, 0.35)
   } catch {}
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled
+  localStorage.setItem('kasse_sound', soundEnabled ? 'on' : 'off')
+  renderTaAdmin()
 }
 
 // ── Cart ──────────────────────────────────────────────────────────────────────
@@ -736,7 +779,7 @@ document.getElementById('search').addEventListener('input', function () {
   el.innerHTML = res.map(p => {
     const imgs = getImages(p)
     const imgTag = imgs.length > 0
-      ? `<img src="${imgs[0]}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" onerror="prodImgError(this)">`
+      ? `<img src="${imgs[0]}" data-pid="${p.id}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" loading="lazy" onload="prodImgLoad(this)" onerror="prodImgError(this)">`
       : `<div style="width:34px;height:34px;border-radius:8px;background:#E8ECF3;flex-shrink:0;display:flex;align-items:center;justify-content:center">📦</div>`
     return `
     <div class="search-item" onclick="addToCart(${p.id});document.getElementById('search').value='';document.getElementById('search-results').classList.remove('visible');if(!('ontouchstart' in window))document.getElementById('barcode').focus()">
@@ -863,19 +906,21 @@ const payLabels = { cash: 'Bar', card: 'Karte', twint: 'TWINT', invoice: 'Rechnu
 const payIcons  = { cash: 'fa-money-bill-wave', card: 'fa-credit-card', twint: 'fa-mobile-screen', invoice: 'fa-file-invoice' }
 
 function showTagesabschluss() {
+  document.getElementById('body').style.display = 'none'
+  document.getElementById('admin-page').style.display = 'flex'
   switchTaTab('today')
-  document.getElementById('ta-overlay').classList.add('visible')
 }
 
 function closeTagesabschluss() {
-  document.getElementById('ta-overlay').classList.remove('visible')
+  document.getElementById('admin-page').style.display = 'none'
+  document.getElementById('body').style.display = 'flex'
 }
 
 function switchTaTab(tab) {
-  document.querySelectorAll('.ta-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab))
+  document.querySelectorAll('.adm-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab))
   document.querySelectorAll('.ta-tab-panel').forEach(p => { p.style.display = 'none' })
   document.getElementById('ta-tab-' + tab).style.display = 'block'
-  if (tab === 'today')    renderTaToday()
+  if (tab === 'today')         renderTaToday()
   else if (tab === 'week')     renderTaWeek()
   else if (tab === 'products') renderTaProducts()
   else if (tab === 'admin')    renderTaAdmin()
@@ -1146,6 +1191,16 @@ function renderTaAdmin() {
   document.getElementById('ta-tab-admin').innerHTML = `
     <div class="ta-section-box">
       <div class="label">Kasse</div>
+      <div class="ta-admin-row">
+        <div>
+          <div class="ta-admin-title">Scan-Ton</div>
+          <div class="ta-admin-desc">Piepton beim Scannen und Bezahlen</div>
+        </div>
+        <button class="ta-sound-toggle ${soundEnabled ? 'on' : ''}" onclick="toggleSound()">
+          <span class="ts-track"><span class="ts-thumb"></span></span>
+          <span class="ts-label">${soundEnabled ? 'Ein' : 'Aus'}</span>
+        </button>
+      </div>
       <div class="ta-admin-row">
         <div>
           <div class="ta-admin-title">Bon-Nummer</div>

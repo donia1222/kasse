@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kasse">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=54">
 </head>
 <script>
 // Detectar si se abre como recibo via QR
@@ -55,6 +55,10 @@
 
     <!-- Categories -->
     <div id="cat-box">
+      <div id="cat-header">
+        <button id="cat-back-btn" onclick="backToCats()"><i class="fa-solid fa-chevron-left"></i> Kategorien</button>
+        <span id="cat-header-name"></span>
+      </div>
       <div id="cat-tabs"></div>
       <div id="cat-products"></div>
     </div>
@@ -203,29 +207,29 @@
   </div>
 </div>
 
-<!-- ADMIN PANEL -->
-<div id="ta-overlay">
-  <div id="ta-card">
-    <div id="ta-header">
-      <h2><i class="fa-solid fa-chart-bar"></i> Admin</h2>
-      <button id="ta-close-x" onclick="closeTagesabschluss()"><i class="fa-solid fa-xmark"></i></button>
+<!-- ADMIN PAGE (página completa) -->
+<div id="admin-page">
+  <div id="adm-header">
+    <div id="adm-brand">
+      <i class="fa-solid fa-chart-bar"></i>
+      <span>US-Fishing Admin</span>
     </div>
-    <div id="ta-tabs">
-      <button class="ta-tab active" data-tab="today" onclick="switchTaTab('today')"><i class="fa-solid fa-calendar-day"></i> Heute</button>
-      <button class="ta-tab" data-tab="week" onclick="switchTaTab('week')"><i class="fa-solid fa-calendar-week"></i> Woche</button>
-      <button class="ta-tab" data-tab="products" onclick="switchTaTab('products')"><i class="fa-solid fa-box"></i> Produkte</button>
-      <button class="ta-tab" data-tab="admin" onclick="switchTaTab('admin')"><i class="fa-solid fa-gear"></i> Admin</button>
+    <div id="adm-tabs">
+      <button class="adm-tab active" data-tab="today"    onclick="switchTaTab('today')"><i class="fa-solid fa-calendar-day"></i><span>Heute</span></button>
+      <button class="adm-tab"        data-tab="week"     onclick="switchTaTab('week')"><i class="fa-solid fa-calendar-week"></i><span>Woche</span></button>
+      <button class="adm-tab"        data-tab="products" onclick="switchTaTab('products')"><i class="fa-solid fa-box"></i><span>Produkte</span></button>
+      <button class="adm-tab"        data-tab="admin"    onclick="switchTaTab('admin')"><i class="fa-solid fa-gear"></i><span>Einstellungen</span></button>
     </div>
-    <div id="ta-content">
-      <div id="ta-tab-today" class="ta-tab-panel"></div>
-      <div id="ta-tab-week" class="ta-tab-panel" style="display:none"></div>
-      <div id="ta-tab-products" class="ta-tab-panel" style="display:none"></div>
-      <div id="ta-tab-admin" class="ta-tab-panel" style="display:none"></div>
+    <div id="adm-actions">
+      <button id="adm-print-btn" onclick="printTagesabschluss()" title="Drucken"><i class="fa-solid fa-print"></i></button>
+      <button id="adm-close-btn" onclick="closeTagesabschluss()"><i class="fa-solid fa-arrow-left"></i> Zur Kasse</button>
     </div>
-    <div id="ta-footer">
-      <button id="ta-close-btn" onclick="closeTagesabschluss()"><i class="fa-solid fa-check"></i> Schliessen</button>
-      <button id="ta-print-btn" onclick="printTagesabschluss()"><i class="fa-solid fa-print"></i></button>
-    </div>
+  </div>
+  <div id="adm-content">
+    <div id="ta-tab-today"    class="ta-tab-panel"></div>
+    <div id="ta-tab-week"     class="ta-tab-panel" style="display:none"></div>
+    <div id="ta-tab-products" class="ta-tab-panel" style="display:none"></div>
+    <div id="ta-tab-admin"    class="ta-tab-panel" style="display:none"></div>
   </div>
 </div>
 
@@ -264,6 +268,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>
