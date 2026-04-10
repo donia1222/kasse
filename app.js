@@ -446,8 +446,9 @@ function renderCart() {
   const count = cart.reduce((s, i) => s + i.qty, 0)
   badge.textContent = count
   badge.classList.toggle('visible', count > 0)
+  document.getElementById('clear-btn').style.visibility = cart.length > 0 ? 'visible' : 'hidden'
   if (cart.length === 0) {
-    el.innerHTML = '<div id="cart-empty"><div class="icon">🛒</div><p>Keine Artikel</p></div>'
+    el.innerHTML = '<div id="cart-empty"><div class="icon"><i class="fa-solid fa-cart-shopping"></i></div><p>Keine Artikel</p></div>'
     return
   }
   el.innerHTML = cart.map(item => {
@@ -665,6 +666,21 @@ function showReceiptQR() {
 
 function closeQR() {
   document.getElementById('qr-overlay').classList.remove('visible')
+}
+
+function openReceiptExternal() {
+  const { sub, vat, total, given, change, t, d, bon, items, pay } = saleData
+  const payload = {
+    b: bon, d, t,
+    s: +sub.toFixed(2), v: +vat.toFixed(2), x: +total.toFixed(2),
+    g: +given.toFixed(2), c: +change.toFixed(2),
+    p: pay,
+    i: items.map(i => [i.name.substring(0, 30), i.qty, +i.price.toFixed(2)])
+  }
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+  const isLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  const base = isLocal ? 'https://web.lweb.ch/caja/index.html' : (location.origin + location.pathname)
+  window.open(base + '?receipt=' + encoded, '_blank')
 }
 
 function showReceiptPage(raw) {

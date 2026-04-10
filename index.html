@@ -76,10 +76,10 @@
             Warenkorb
             <div id="cart-badge"></div>
           </div>
-<button id="clear-btn" onclick="clearCart()">↺ Löschen</button>
+<button id="clear-btn" onclick="clearCart()" style="visibility:hidden">↺ Löschen</button>
         </div>
         <div id="cart-items">
-          <div id="cart-empty"><div class="icon">🛒</div><p>Keine Artikel</p></div>
+          <div id="cart-empty"><div class="icon"><i class="fa-solid fa-cart-shopping"></i></div><p>Keine Artikel</p></div>
         </div>
       </div>
       <button id="pay-open-btn" onclick="showPanel('pay')" disabled>
@@ -202,6 +202,7 @@
     <div id="success-actions">
       <button id="btn-print" onclick="printTicket()"><i class="fa-solid fa-print"></i> Bon drucken</button>
       <button id="btn-qr" onclick="showReceiptQR()"><i class="fa-solid fa-qrcode"></i> QR-Bon senden</button>
+      <button id="btn-receipt-view" onclick="openReceiptExternal()"><i class="fa-solid fa-arrow-up-right-from-square"></i> Rechnung anzeigen</button>
       <button id="btn-close" onclick="closeSale()"><i class="fa-solid fa-check"></i> Fertig</button>
     </div>
   </div>
