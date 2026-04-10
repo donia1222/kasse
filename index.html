@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Kasse">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="styles.css?v=54">
+<link rel="stylesheet" href="styles.css?v=58">
 </head>
 <script>
 // Detectar si se abre como recibo via QR
@@ -58,6 +58,7 @@
       <div id="cat-header">
         <button id="cat-back-btn" onclick="backToCats()"><i class="fa-solid fa-chevron-left"></i> Kategorien</button>
         <span id="cat-header-name"></span>
+        <input id="cat-filter" type="text" placeholder="Filtern…" oninput="filterCatProducts(this.value)" autocomplete="off"/>
       </div>
       <div id="cat-tabs"></div>
       <div id="cat-products"></div>
@@ -82,6 +83,17 @@
           <div id="cart-empty"><div class="icon"><i class="fa-solid fa-cart-shopping"></i></div><p>Keine Artikel</p></div>
         </div>
       </div>
+      <div id="discount-row">
+        <span class="disc-label"><i class="fa-solid fa-percent"></i> Rabatt</span>
+        <div id="disc-btns">
+          <button class="disc-btn active" data-d="0"  onclick="setDiscount(0)">0%</button>
+          <button class="disc-btn"        data-d="5"  onclick="setDiscount(5)">5%</button>
+          <button class="disc-btn"        data-d="10" onclick="setDiscount(10)">10%</button>
+          <button class="disc-btn"        data-d="15" onclick="setDiscount(15)">15%</button>
+          <button class="disc-btn"        data-d="20" onclick="setDiscount(20)">20%</button>
+        </div>
+      </div>
+
       <button id="pay-open-btn" onclick="showPanel('pay')" disabled>
         <span>Bezahlen</span>
         <div class="right"><span class="sub" id="pay-open-total">CHF 0.00</span> ›</div>
@@ -113,15 +125,33 @@
 
       <div id="cash-box" class="visible">
         <div class="label">Bargeld erhalten</div>
-        <div id="cash-input-wrap">
-          <span class="cur">CHF</span>
-          <input id="cash-input" type="number" placeholder="0.00" oninput="updateChange()"/>
+        <div id="cash-display-wrap">
+          <span class="cash-cur">CHF</span>
+          <span id="cash-display">—</span>
+        </div>
+        <div id="cash-pad">
+          <button class="pad-btn" onclick="cashPad('7')">7</button>
+          <button class="pad-btn" onclick="cashPad('8')">8</button>
+          <button class="pad-btn" onclick="cashPad('9')">9</button>
+          <button class="pad-btn" onclick="cashPad('4')">4</button>
+          <button class="pad-btn" onclick="cashPad('5')">5</button>
+          <button class="pad-btn" onclick="cashPad('6')">6</button>
+          <button class="pad-btn" onclick="cashPad('1')">1</button>
+          <button class="pad-btn" onclick="cashPad('2')">2</button>
+          <button class="pad-btn" onclick="cashPad('3')">3</button>
+          <button class="pad-btn" onclick="cashPad('.')">.</button>
+          <button class="pad-btn" onclick="cashPad('0')">0</button>
+          <button class="pad-btn pad-del" onclick="cashPad('⌫')"><i class="fa-solid fa-delete-left"></i></button>
         </div>
         <div id="quick-amounts"></div>
         <div id="change-display">
           <span id="change-label">Rückgeld</span>
           <span id="change-amount">CHF 0.00</span>
         </div>
+      </div>
+
+      <div id="note-box">
+        <input id="sale-note" type="text" placeholder="Notiz zur Buchung (optional)…" maxlength="80" autocomplete="off"/>
       </div>
 
       <div id="spacer"></div>
@@ -219,6 +249,7 @@
       <button class="adm-tab active" data-tab="today"    onclick="switchTaTab('today')"><i class="fa-solid fa-calendar-day"></i><span>Heute</span></button>
       <button class="adm-tab"        data-tab="week"     onclick="switchTaTab('week')"><i class="fa-solid fa-calendar-week"></i><span>Woche</span></button>
       <button class="adm-tab"        data-tab="products" onclick="switchTaTab('products')"><i class="fa-solid fa-box"></i><span>Produkte</span></button>
+      <button class="adm-tab"        data-tab="month"    onclick="switchTaTab('month')"><i class="fa-solid fa-calendar"></i><span>Monat</span></button>
       <button class="adm-tab"        data-tab="admin"    onclick="switchTaTab('admin')"><i class="fa-solid fa-gear"></i><span>Einstellungen</span></button>
     </div>
     <div id="adm-actions">
@@ -230,6 +261,7 @@
     <div id="ta-tab-today"    class="ta-tab-panel"></div>
     <div id="ta-tab-week"     class="ta-tab-panel" style="display:none"></div>
     <div id="ta-tab-products" class="ta-tab-panel" style="display:none"></div>
+    <div id="ta-tab-month"    class="ta-tab-panel" style="display:none"></div>
     <div id="ta-tab-admin"    class="ta-tab-panel" style="display:none"></div>
   </div>
 </div>
@@ -269,6 +301,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="app.js?v=54"></script>
+<script src="app.js?v=58"></script>
 </body>
 </html>

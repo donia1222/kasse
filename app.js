@@ -1,6 +1,11 @@
 const API = 'https://web.lweb.ch/templettedhop/'
-let products = [], categories = [], cart = [], activeCat = null, payMethod = 'cash', bonNo = 1042
+let products = [], categories = [], cart = [], activeCat = null, payMethod = 'cash'
+let bonNo = parseInt(localStorage.getItem('kasse_bon') || '1042')
 let soundEnabled = localStorage.getItem('kasse_sound') !== 'off'
+let darkMode = localStorage.getItem('kasse_dark') === 'on'
+let cartDiscount = 0   // porcentaje 0-100
+let cashPadVal = ''    // valor del numpad de efectivo
+let saleNote = ''      // nota libre en la venta
 
 // Imágenes locales por categoría (keyword → archivo en /images/)
 const CAT_LOCAL_IMAGES = {
@@ -321,6 +326,18 @@ function backToCats() {
   el.classList.remove('visible')
   header.style.display = 'none'
   tabs.style.display = ''
+  const cf = document.getElementById('cat-filter')
+  if (cf) cf.value = ''
+}
+
+function filterCatProducts(q) {
+  if (!activeCat || !catDomCache[activeCat]) return
+  const grid = catDomCache[activeCat]
+  const lower = q.toLowerCase().trim()
+  grid.querySelectorAll('.prod-btn').forEach(btn => {
+    const name = (btn.querySelector('.pname')?.textContent || '').toLowerCase()
+    btn.style.display = (!lower || name.includes(lower)) ? '' : 'none'
+  })
 }
 
 function prodImgLoad(img) {
@@ -438,7 +455,11 @@ function updateQty(id, d) {
   renderCart(); updateTotal()
 }
 
-function clearCart() { cart = []; renderCart(); updateTotal() }
+function clearCart() {
+  if (cart.length === 0) return
+  if (!confirm('Warenkorb leeren?')) return
+  cart = []; cartDiscount = 0; renderCart(); updateTotal(); renderDiscountBtns()
+}
 
 function renderCart() {
   const el = document.getElementById('cart-items')
@@ -487,10 +508,49 @@ function showPanel(name) {
 
 // ── Total ─────────────────────────────────────────────────────────────────────
 function calcTotal() {
-  const sub = cart.reduce((s, i) => s + i.price * i.qty, 0)
+  const rawSub = cart.reduce((s, i) => s + i.price * i.qty, 0)
+  const discAmt = rawSub * (cartDiscount / 100)
+  const sub = rawSub - discAmt
   const vat = sub * 0.081
   const total = sub + vat
-  return { sub, vat, total }
+  return { sub, vat, total, rawSub, discAmt }
+}
+
+// ── Descuento ─────────────────────────────────────────────────────────────────
+function setDiscount(pct) {
+  cartDiscount = pct
+  renderDiscountBtns()
+  updateTotal()
+}
+
+function renderDiscountBtns() {
+  document.querySelectorAll('.disc-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.d) === cartDiscount)
+  })
+}
+
+// ── Cash numpad ───────────────────────────────────────────────────────────────
+function cashPad(k) {
+  if (k === '⌫') { cashPadVal = cashPadVal.slice(0, -1) }
+  else if (k === '.' && cashPadVal.includes('.')) return
+  else if (cashPadVal.length >= 8) return
+  else cashPadVal += k
+  renderCashDisplay()
+  updateChange()
+}
+
+function setCashAmount(v) {
+  cashPadVal = String(v)
+  renderCashDisplay()
+  updateChange()
+}
+
+function renderCashDisplay() {
+  const el = document.getElementById('cash-display')
+  if (!cashPadVal) { el.textContent = '—'; el.classList.remove('has-val'); return }
+  const num = parseFloat(cashPadVal) || 0
+  el.textContent = num.toFixed(cashPadVal.includes('.') ? Math.min(2, (cashPadVal.split('.')[1]||'').length) : 2)
+  el.classList.add('has-val')
 }
 
 function updateTotal() {
@@ -521,16 +581,16 @@ function buildQuickAmounts(total) {
   const amts = [total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10, 50, 100, 200]
     .filter((v, i, a) => a.indexOf(v) === i && v >= total).slice(0, 6)
   document.getElementById('quick-amounts').innerHTML = amts.map(v =>
-    `<button class="quick-amt" onclick="document.getElementById('cash-input').value=${v.toFixed(2)};updateChange()">${v % 1 === 0 ? v : v.toFixed(2)}.-</button>`
+    `<button class="quick-amt" onclick="setCashAmount('${v.toFixed(2)}')">${v % 1 === 0 ? v : v.toFixed(2)}.-</button>`
   ).join('')
 }
 
 function updateChange() {
   const { total } = calcTotal()
-  const given = parseFloat(document.getElementById('cash-input').value || 0)
+  const given = parseFloat(cashPadVal || 0)
   const change = given - total
   const el = document.getElementById('change-display')
-  if (!document.getElementById('cash-input').value) { el.className = ''; return }
+  if (!cashPadVal) { el.className = ''; return }
   if (change >= 0) {
     el.className = 'ok'
     document.getElementById('change-label').textContent = 'Rückgeld'
@@ -545,8 +605,8 @@ function updateChange() {
 
 function checkConfirm() {
   const { total } = calcTotal()
-  const given = parseFloat(document.getElementById('cash-input').value || 0)
-  const ok = cart.length > 0 && (payMethod !== 'cash' || (given >= total && !!document.getElementById('cash-input').value))
+  const given = parseFloat(cashPadVal || 0)
+  const ok = cart.length > 0 && (payMethod !== 'cash' || (given >= total && !!cashPadVal))
   document.getElementById('confirm-btn').disabled = !ok
 }
 
@@ -555,16 +615,17 @@ let saleData = {}
 
 function confirmSale() {
   beepConfirm()
-  const { sub, vat, total } = calcTotal()
-  const given = parseFloat(document.getElementById('cash-input').value || 0)
+  const { sub, vat, total, rawSub, discAmt } = calcTotal()
+  const given = parseFloat(cashPadVal || 0)
   const change = given - total
   const now = new Date()
   const t = now.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })
   const d = now.toLocaleDateString('de-CH')
+  saleNote = (document.getElementById('sale-note').value || '').trim()
 
-  // Guarda datos para el ticket e historial
-  saleData = { sub, vat, total, given, change, t, d, bon: bonNo, items: [...cart], pay: payMethod }
+  saleData = { sub, vat, total, rawSub, discAmt, discount: cartDiscount, given, change, t, d, bon: bonNo, items: [...cart], pay: payMethod, note: saleNote }
   saveSale(saleData)
+  localStorage.setItem('kasse_bon', bonNo + 1)
 
   document.getElementById('success-meta').textContent = `Bon #${bonNo} · ${t}`
   document.getElementById('success-total').textContent = `CHF ${total.toFixed(2)}`
@@ -574,15 +635,16 @@ function confirmSale() {
 
 function closeSale() {
   document.getElementById('success-overlay').classList.remove('visible')
-  cart = []; renderCart(); updateTotal()
-  document.getElementById('cash-input').value = ''
+  cart = []; cartDiscount = 0; renderCart(); updateTotal(); renderDiscountBtns()
+  cashPadVal = ''; renderCashDisplay()
   document.getElementById('change-display').className = ''
+  document.getElementById('sale-note').value = ''
   showPanel('cart')
   if (!('ontouchstart' in window)) document.getElementById('barcode').focus()
 }
 
 function printTicket() {
-  const { sub, vat, total, given, change, t, d, bon, items, pay } = saleData
+  const { sub, vat, total, rawSub, discAmt, discount, given, change, t, d, bon, items, pay, note } = saleData
 
   document.getElementById('tk-meta').innerHTML =
     `<div>${d} · ${t}</div><div>Bon #${bon}</div>`
@@ -595,11 +657,20 @@ function printTicket() {
     </div>`
   ).join('')
 
+  const discRow = (discount > 0)
+    ? `<div class="tk-row"><span>Brutto</span><span>CHF ${(rawSub||sub).toFixed(2)}</span></div>
+       <div class="tk-row"><span>Rabatt ${discount}%</span><span>-CHF ${(discAmt||0).toFixed(2)}</span></div>`
+    : ''
+
+  const noteRow = note ? `<div style="font-size:10px;margin:4px 0;font-style:italic">${note}</div>` : ''
+
   document.getElementById('tk-total').innerHTML =
-    `<div class="tk-row"><span>Subtotal</span><span>CHF ${sub.toFixed(2)}</span></div>
+    `${discRow}
+     <div class="tk-row"><span>Subtotal</span><span>CHF ${sub.toFixed(2)}</span></div>
      <div class="tk-row"><span>MwSt. 8.1%</span><span>CHF ${vat.toFixed(2)}</span></div>
      <div class="tk-row tk-bold"><span>TOTAL</span><span>CHF ${total.toFixed(2)}</span></div>
-     <div class="tk-row"><span>Zahlung (${payLabels[pay] || pay})</span><span>${pay === 'cash' ? `CHF ${given.toFixed(2)}` : '—'}</span></div>`
+     <div class="tk-row"><span>Zahlung (${payLabels[pay] || pay})</span><span>${pay === 'cash' ? `CHF ${given.toFixed(2)}` : '—'}</span></div>
+     ${noteRow}`
 
   document.getElementById('tk-change').innerHTML = (pay === 'cash' && change > 0)
     ? `<div class="tk-row tk-bold"><span>Rückgeld</span><span>CHF ${change.toFixed(2)}</span></div>`
@@ -818,11 +889,22 @@ document.getElementById('barcode').addEventListener('keydown', function (e) {
 // ── PIN ───────────────────────────────────────────────────────────────────────
 let pinEntry = '', pinMode = 'check', pinNew1 = ''
 
+// sessionStorage key — sobrevive recargas, se borra al cerrar el tab
+const SESSION_KEY = 'kasse_session_ok'
+
 function checkPin() {
+  // Si ya se desbloqueó en esta sesión del navegador, no pedir de nuevo
+  if (sessionStorage.getItem(SESSION_KEY) === '1') return
   pinMode = 'check'; pinEntry = ''
   document.getElementById('pin-subtitle').textContent = 'PIN eingeben'
   renderPinDots()
   document.getElementById('pin-overlay').classList.add('visible')
+}
+
+function lockKasse() {
+  sessionStorage.removeItem(SESSION_KEY)
+  closeTagesabschluss()
+  checkPin()
 }
 
 function pinPress(k) {
@@ -832,6 +914,7 @@ function pinPress(k) {
   if (pinEntry.length < 4) return
   if (pinMode === 'check') {
     if (pinEntry === (localStorage.getItem('kasse_pin') || '1234')) {
+      sessionStorage.setItem(SESSION_KEY, '1')
       document.getElementById('pin-overlay').classList.remove('visible')
     } else { shakePinDots(); pinEntry = '' }
   } else if (pinMode === 'set1') {
@@ -938,6 +1021,7 @@ function switchTaTab(tab) {
   document.getElementById('ta-tab-' + tab).style.display = 'block'
   if (tab === 'today')         renderTaToday()
   else if (tab === 'week')     renderTaWeek()
+  else if (tab === 'month')    renderTaMonth()
   else if (tab === 'products') renderTaProducts()
   else if (tab === 'admin')    renderTaAdmin()
 }
@@ -1009,16 +1093,19 @@ function renderTaToday() {
 
     <div class="ta-section-box">
       <div class="label">Verkäufe heute (${sales.length})</div>
-      ${[...sales].reverse().map(s => `
+      ${[...sales].map((s, i) => ({ s, i })).reverse().map(({ s, i }) => `
         <div class="ta-sale-row2" onclick="toggleSaleDetail(this)">
           <span class="ta-sale-bon">Bon #${s.bon}</span>
           <span class="ta-sale-time">${s.t}</span>
           <span class="ta-sale-pay">${payLabels[s.pay] || s.pay}</span>
+          ${s.discount > 0 ? `<span class="ta-sale-disc">-${s.discount}%</span>` : ''}
           <span class="ta-sale-total">CHF ${s.total.toFixed(2)}</span>
+          <button class="ta-reprint-btn" onclick="event.stopPropagation();reprintSale(${i})" title="Bon drucken"><i class="fa-solid fa-print"></i></button>
           <i class="fa-solid fa-chevron-down ta-chevron"></i>
         </div>
         <div class="ta-sale-detail" style="display:none">
-          ${(s.items || []).map(i => `<div class="ta-detail-row"><span>${i.qty}× ${i.name}</span><span>CHF ${(i.price * i.qty).toFixed(2)}</span></div>`).join('')}
+          ${(s.items || []).map(i2 => `<div class="ta-detail-row"><span>${i2.qty}× ${i2.name}</span><span>CHF ${(i2.price * i2.qty).toFixed(2)}</span></div>`).join('')}
+          ${s.note ? `<div class="ta-detail-row" style="font-style:italic;color:var(--text3)"><span>Notiz: ${s.note}</span></div>` : ''}
         </div>`).join('') || '<p class="ta-empty">Noch keine Verkäufe heute</p>'}
     </div>
   `
@@ -1174,7 +1261,18 @@ function renderTaProducts() {
   const catList = Object.entries(catMap).sort((a, b) => b[1].rev - a[1].rev).slice(0, 8)
   const maxCat = catList[0]?.[1].rev || 0.01
 
+  const lowStock = products.filter(p => (p.stock || 0) > 0 && (p.stock || 0) <= 3).sort((a,b) => a.stock - b.stock).slice(0, 20)
+
   document.getElementById('ta-tab-products').innerHTML = `
+    ${lowStock.length ? `
+    <div class="ta-section-box" style="border-color:#fecaca;background:#FEF2F2">
+      <div class="label" style="color:#dc2626">⚠ Kritischer Lagerbestand (≤ 3 Stk)</div>
+      ${lowStock.map(p => `
+        <div class="ta-prod-row">
+          <span class="ta-prod-name" style="color:var(--text)">${p.name}</span>
+          <span class="ta-prod-qty" style="color:${p.stock<=1?'#dc2626':'#f59e0b'};font-weight:900">${p.stock} Stk</span>
+        </div>`).join('')}
+    </div>` : ''}
     <div class="ta-section-grid">
       <div class="ta-section-box">
         <div class="label">Top Produkte heute</div>
@@ -1219,6 +1317,16 @@ function renderTaAdmin() {
       </div>
       <div class="ta-admin-row">
         <div>
+          <div class="ta-admin-title">Dunkelmodus</div>
+          <div class="ta-admin-desc">Dunkle Oberfläche für schwaches Licht</div>
+        </div>
+        <button class="ta-sound-toggle ${darkMode ? 'on' : ''}" onclick="toggleDark()">
+          <span class="ts-track"><span class="ts-thumb"></span></span>
+          <span class="ts-label">${darkMode ? 'Ein' : 'Aus'}</span>
+        </button>
+      </div>
+      <div class="ta-admin-row">
+        <div>
           <div class="ta-admin-title">Bon-Nummer</div>
           <div class="ta-admin-desc">Aktuelle Bon-Nr: <strong>${bonNo}</strong></div>
         </div>
@@ -1240,6 +1348,15 @@ function renderTaAdmin() {
           <i class="fa-solid fa-key"></i> PIN ändern
         </button>
       </div>
+      <div class="ta-admin-row">
+        <div>
+          <div class="ta-admin-title">Kasse sperren</div>
+          <div class="ta-admin-desc">PIN-Bildschirm sofort anzeigen</div>
+        </div>
+        <button class="ta-admin-btn ta-admin-btn-danger" onclick="lockKasse()">
+          <i class="fa-solid fa-lock"></i> Sperren
+        </button>
+      </div>
     </div>
 
     <div class="ta-section-box">
@@ -1249,9 +1366,14 @@ function renderTaAdmin() {
           <div class="ta-admin-title">Verkaufshistorie</div>
           <div class="ta-admin-desc">${allSales.length} Einträge gesamt · ${storageKb} KB · Heute: ${todayCount}</div>
         </div>
-        <button class="ta-admin-btn ta-admin-btn-sec" onclick="exportSales()">
-          <i class="fa-solid fa-download"></i> Export JSON
-        </button>
+        <div style="display:flex;gap:8px">
+          <button class="ta-admin-btn ta-admin-btn-sec" onclick="exportSalesCsv()">
+            <i class="fa-solid fa-file-csv"></i> CSV
+          </button>
+          <button class="ta-admin-btn ta-admin-btn-sec" onclick="exportSales()">
+            <i class="fa-solid fa-download"></i> JSON
+          </button>
+        </div>
       </div>
       <div class="ta-admin-row">
         <div>
@@ -1354,8 +1476,157 @@ function printTagesabschluss() {
   document.getElementById('ta-ticket').innerHTML = ''
 }
 
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+function toggleDark() {
+  darkMode = !darkMode
+  localStorage.setItem('kasse_dark', darkMode ? 'on' : 'off')
+  applyDark()
+  renderTaAdmin()
+}
+
+function applyDark() {
+  document.body.classList.toggle('dark', darkMode)
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportSalesCsv() {
+  const sales = getAllSales()
+  const rows = [['Datum','Uhrzeit','Bon','Zahlungsart','Netto','MwSt','Total','Rabatt%','Notiz','Artikel']]
+  sales.forEach(s => {
+    const items = (s.items || []).map(i => `${i.qty}x ${i.name}`).join(' | ')
+    rows.push([
+      s.d, s.t, s.bon,
+      payLabels[s.pay] || s.pay,
+      (s.sub||0).toFixed(2), (s.vat||0).toFixed(2), (s.total||0).toFixed(2),
+      s.discount || 0,
+      s.note || '',
+      items
+    ])
+  })
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `kasse_export_${new Date().toLocaleDateString('de-CH').replace(/\./g,'-')}.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+// ── Reimpresión de bon ────────────────────────────────────────────────────────
+function reprintSale(idx) {
+  const sales = getAllSales()
+  const s = sales[idx]
+  if (!s) return
+  const { sub, vat, total, rawSub, discAmt, discount, given, change, t, d, bon, items, pay, note } = s
+
+  document.getElementById('tk-meta').innerHTML = `<div>${d} · ${t}</div><div>Bon #${bon} (Kopie)</div>`
+  document.getElementById('tk-items').innerHTML = (items||[]).map(i =>
+    `<div class="tk-item"><span class="tk-qty">${i.qty}×</span><span class="tk-name">${i.name}</span><span class="tk-price">CHF ${(i.price * i.qty).toFixed(2)}</span></div>`
+  ).join('')
+  const discRow = (discount > 0)
+    ? `<div class="tk-row"><span>Brutto</span><span>CHF ${(rawSub||sub).toFixed(2)}</span></div><div class="tk-row"><span>Rabatt ${discount}%</span><span>-CHF ${(discAmt||0).toFixed(2)}</span></div>`
+    : ''
+  const noteRow = note ? `<div style="font-size:10px;margin:4px 0;font-style:italic">${note}</div>` : ''
+  document.getElementById('tk-total').innerHTML =
+    `${discRow}
+     <div class="tk-row"><span>Subtotal</span><span>CHF ${sub.toFixed(2)}</span></div>
+     <div class="tk-row"><span>MwSt. 8.1%</span><span>CHF ${vat.toFixed(2)}</span></div>
+     <div class="tk-row tk-bold"><span>TOTAL</span><span>CHF ${total.toFixed(2)}</span></div>
+     <div class="tk-row"><span>Zahlung (${payLabels[pay]||pay})</span><span>${pay==='cash'?`CHF ${(given||0).toFixed(2)}`:'—'}</span></div>${noteRow}`
+  document.getElementById('tk-change').innerHTML = (pay === 'cash' && change > 0)
+    ? `<div class="tk-row tk-bold"><span>Rückgeld</span><span>CHF ${change.toFixed(2)}</span></div>` : ''
+  window.print()
+}
+
+// ── Vista mensual ─────────────────────────────────────────────────────────────
+function renderTaMonth() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const all = getAllSales()
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const days = Array.from({ length: daysInMonth }, (_, i) => {
+    const d = new Date(year, month, i + 1)
+    const dateStr = d.toLocaleDateString('de-CH')
+    const daySales = all.filter(s => s.d === dateStr)
+    return { n: i + 1, dateStr, total: daySales.reduce((s, x) => s + x.total, 0), count: daySales.length }
+  })
+  const monthTotal = days.reduce((s, d) => s + d.total, 0)
+  const monthCount = days.reduce((s, d) => s + d.count, 0)
+  const maxDay = Math.max(...days.map(d => d.total), 0.01)
+  const monthName = now.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })
+
+  const byPay = { cash: 0, card: 0, twint: 0, invoice: 0 }
+  all.filter(s => {
+    const parts = (s.d||'').split('.'); const sd = new Date(+parts[2], +parts[1]-1, +parts[0])
+    return sd.getFullYear() === year && sd.getMonth() === month
+  }).forEach(s => { if (s.pay in byPay) byPay[s.pay] += s.total })
+
+  document.getElementById('ta-tab-month').innerHTML = `
+    <div class="ta-kpi-grid">
+      <div class="ta-kpi ta-kpi-main">
+        <div class="ta-kpi-label">Umsatz · ${monthName}</div>
+        <div class="ta-kpi-val">CHF ${monthTotal.toFixed(2)}</div>
+      </div>
+      <div class="ta-kpi"><div class="ta-kpi-label">Verkäufe</div><div class="ta-kpi-val">${monthCount}</div></div>
+      <div class="ta-kpi"><div class="ta-kpi-label">Ø Bon</div><div class="ta-kpi-val">CHF ${(monthCount ? monthTotal/monthCount : 0).toFixed(2)}</div></div>
+      <div class="ta-kpi"><div class="ta-kpi-label">Ø Tag</div><div class="ta-kpi-val">CHF ${(monthTotal/daysInMonth).toFixed(2)}</div></div>
+    </div>
+    <div class="ta-section-grid">
+      <div class="ta-section-box">
+        <div class="label">Nach Zahlungsart</div>
+        ${Object.entries(byPay).filter(([,v])=>v>0).map(([k,v])=>`
+          <div class="ta-pay-row">
+            <span>${fi(payIcons[k])} ${payLabels[k]}</span>
+            <div class="ta-pay-bar-wrap"><div class="ta-pay-bar" style="width:${(v/(monthTotal||1)*100).toFixed(1)}%"></div></div>
+            <span class="ta-pay-val">CHF ${v.toFixed(2)}</span>
+          </div>`).join('') || '<p class="ta-empty">Keine Daten</p>'}
+      </div>
+      <div class="ta-section-box">
+        <div class="label">Verkäufe pro Tag</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${days.map(d=>`
+            <div title="${d.dateStr}: CHF ${d.total.toFixed(2)}" style="
+              width:28px;height:28px;border-radius:6px;font-size:10px;font-weight:800;
+              display:flex;align-items:center;justify-content:center;cursor:default;
+              background:${d.count>0?`rgba(44,95,46,${Math.max(0.15,d.total/maxDay*0.9)})`:'var(--surface3)'};
+              color:${d.count>0?'white':'var(--text3)'};">${d.n}</div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="ta-section-box">
+      <div class="label">Tagesumsatz ${monthName}</div>
+      <div class="ta-week-chart" style="height:120px">
+        ${days.map(d=>`
+          <div class="ta-week-col" style="min-width:0">
+            <div class="ta-week-bar-wrap">
+              <div class="ta-week-bar" style="height:${d.total>0?(d.total/maxDay*100).toFixed(0):0}%;background:${d.dateStr===new Date().toLocaleDateString('de-CH')?'linear-gradient(to top,var(--accent),#4ade80)':'var(--border2)'}"></div>
+            </div>
+            <div style="font-size:9px;color:var(--text3);font-weight:700">${d.n}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+  `
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 if (!new URLSearchParams(location.search).has('receipt')) {
+  applyDark()
   load()
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/caja/sw.js')
 }
+
+// ── Atajos teclado ────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (document.getElementById('pin-overlay').classList.contains('visible')) return
+  if (document.getElementById('admin-page').style.display === 'flex') return
+  if (e.key === 'F2') { e.preventDefault(); if (cart.length) showPanel('pay') }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    if (document.getElementById('panel-pay').style.display !== 'none') showPanel('cart')
+    else if (document.getElementById('success-overlay').classList.contains('visible')) closeSale()
+    else if (document.getElementById('manual-overlay').classList.contains('visible')) closeManual()
+    else if (document.getElementById('qr-overlay').classList.contains('visible')) closeQR()
+  }
+})
