@@ -255,33 +255,83 @@ body {
 .prod-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
   padding: 10px;
   align-content: start;
 }
 
 /* ── PRODUCT CARDS ── */
-.prod-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 0;
-  padding: 0; width: 100%;
+/* Wrapper externo: position:relative para la estrella absoluta */
+.prod-card {
+  position: relative;
+  display: flex; flex-direction: column;
   background: var(--surface);
   border: 1.5px solid var(--border);
-  border-radius: 16px; cursor: pointer;
-  transition: all .15s;
-  text-align: center; touch-action: manipulation;
-  -webkit-user-select: none;
+  border-radius: 14px;
+  overflow: visible;          /* ← no clipear la estrella */
   box-shadow: 0 2px 8px rgba(0,0,0,.06);
-  overflow: hidden;
+  transition: box-shadow .14s, border-color .14s;
 }
-.prod-btn:active { border-color: var(--accent); transform: scale(.96); box-shadow: 0 0 0 3px var(--accent-gl); }
-.prod-btn.out { opacity: .28; cursor: not-allowed; pointer-events: none; }
-.prod-btn .prod-img-wrap { width: 100%; height: 90px; overflow: hidden; background: #fff; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 6px; }
-.prod-btn img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.prod-btn .prod-no-img { width: 100%; height: 90px; background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 30px; }
-.prod-btn .prod-info-wrap { padding: 8px 8px 10px; display: flex; flex-direction: column; gap: 3px; width: 100%; }
-.prod-btn .pname { font-size: 12px; font-weight: 700; color: var(--text); line-height: 1.3; max-height: 2.6em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; width: 100%; }
-.prod-btn .pinfo { font-size: 14px; font-weight: 900; color: var(--accent); white-space: nowrap; }
-.prod-btn .pstock { font-size: 10px; color: var(--text3); font-weight: 600; }
+.prod-card:hover   { box-shadow: 0 4px 16px rgba(0,0,0,.11); border-color: var(--border2); }
+.prod-card.out     { opacity: .3; pointer-events: none; }
+
+/* Botón principal */
+.prod-btn {
+  display: flex; flex-direction: column; align-items: stretch;
+  padding: 0; width: 100%; flex: 1;
+  background: transparent; border: none;
+  cursor: pointer; touch-action: manipulation;
+  -webkit-user-select: none; text-align: left;
+  border-radius: 14px; overflow: hidden;  /* redondeo aquí */
+  transition: background .12s;
+}
+.prod-btn:active { background: var(--surface2); }
+
+/* Imagen */
+.prod-img-wrap {
+  width: 100%; height: 100px;
+  overflow: hidden; background: var(--surface2);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.prod-img-wrap img { width: 100%; height: 100%; object-fit: contain; padding: 6px; display: block; transition: transform .2s; }
+.prod-card:hover .prod-img-wrap img { transform: scale(1.04); }
+.prod-no-img {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; color: var(--text3);
+}
+
+/* Info */
+.prod-info-wrap {
+  padding: 8px 9px 9px;
+  display: flex; flex-direction: column; gap: 3px;
+  border-top: 1px solid var(--border);
+}
+.pname {
+  font-size: 12px; font-weight: 700; color: var(--text);
+  line-height: 1.35; max-height: 2.7em;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.pinfo { font-size: 15px; font-weight: 900; color: var(--accent); white-space: nowrap; }
+.pstock { font-size: 10px; color: var(--text3); font-weight: 600; }
+.pstock.low { color: #d97706; font-weight: 800; }
+
+/* ⭐ Estrella — esquina superior derecha de la tarjeta */
+.fav-btn {
+  position: absolute; top: -8px; right: -8px;
+  width: 30px; height: 30px;
+  background: white;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer; font-size: 13px; color: #cbd5e1;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.fav-btn:active { transform: scale(.82); }
+.fav-btn.active { color: #f59e0b; background: #fffbeb; border-color: #fcd34d; box-shadow: 0 2px 8px rgba(245,158,11,.3); }
 
 /* ── CART ── */
 #cart-box {
@@ -362,7 +412,7 @@ body {
 /* ── RIGHT PANEL ── */
 #right { width: 330px; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
 #panel-cart { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; }
-#panel-pay  { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; }
+#panel-pay  { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #panel-cart #cart-box { flex: 1; min-height: 0; }
 
 /* Pay open button */
@@ -514,6 +564,7 @@ body {
   cursor: pointer; display: flex; align-items: center; justify-content: space-between;
   box-shadow: 0 6px 20px var(--accent-gl);
   transition: all .15s; flex-shrink: 0;
+  position: sticky; bottom: 0;
 }
 #confirm-btn:active:not(:disabled) { transform: scale(.97); filter: brightness(.92); }
 #confirm-btn:disabled {
@@ -1162,6 +1213,49 @@ body.dark .ta-kpi-main { background: linear-gradient(135deg, #1e4a20 0%, #2a6b2c
 }
 #cat-filter::placeholder { color: var(--text3); }
 #cat-filter:focus { border-color: var(--accent); }
+
+/* ── FAVORITOS ── */
+.cat-banner-favs .cat-banner-icon-wrap {
+  background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 100%);
+}
+.cat-banner-favs .cat-banner-icon-wrap i { color: #f59e0b; }
+.cat-banner-favs .cat-banner-overlay { background: var(--surface); }
+.cat-banner-favs .cb-name { color: var(--text); }
+.cat-banner-favs .cb-count { color: #b45309; background: #fef3c7; border-color: #fde68a; }
+.cat-banner-favs { border-color: #fde68a; }
+.cat-banner-favs:hover { border-color: #f59e0b; box-shadow: 0 4px 14px rgba(245,158,11,.2); }
+
+/* Estrella — relativa a .prod-btn (position:relative ya definido arriba) */
+.fav-btn {
+  position: absolute; top: 6px; right: 6px;
+  width: 28px; height: 28px;
+  background: rgba(255,255,255,.92);
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 50%; cursor: pointer;
+  font-size: 12px; color: #9ca3af;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; z-index: 5;
+  box-shadow: 0 1px 5px rgba(0,0,0,.15);
+  backdrop-filter: blur(4px);
+}
+.fav-btn:active { transform: scale(.85); }
+.fav-btn.active { color: #f59e0b; background: #fffbeb; border-color: #fde68a; }
+.fav-btn.active i { filter: drop-shadow(0 0 4px rgba(245,158,11,.5)); }
+
+/* ── PRECIO EDITABLE EN CARRITO ── */
+.cart-price-row {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 13px; color: var(--accent); font-weight: 800; margin-top: 2px;
+}
+.price-edit-btn {
+  width: 22px; height: 22px;
+  background: var(--surface3); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer;
+  font-size: 10px; color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s; flex-shrink: 0;
+}
+.price-edit-btn:active { background: var(--accent); color: white; border-color: var(--accent); }
 
 /* ── REPRINT BUTTON ── */
 .ta-reprint-btn {

@@ -6,6 +6,8 @@ let darkMode = localStorage.getItem('kasse_dark') === 'on'
 let cartDiscount = 0   // porcentaje 0-100
 let cashPadVal = ''    // valor del numpad de efectivo
 let saleNote = ''      // nota libre en la venta
+let favorites = new Set(JSON.parse(localStorage.getItem('kasse_favs') || '[]'))
+let manualEditId = null  // null = nuevo ítem manual, id = editar precio en carrito
 
 // Imágenes locales por categoría (keyword → archivo en /images/)
 const CAT_LOCAL_IMAGES = {
@@ -191,15 +193,30 @@ async function load() {
 // ── Manual entry ─────────────────────────────────────────────────────────────
 let padValue = ''
 
-function openManual() {
-  padValue = ''
-  document.getElementById('manual-amount-display').textContent = '0.00'
-  document.getElementById('manual-desc').value = ''
+function openManual(editId = null) {
+  manualEditId = editId
+  if (editId !== null) {
+    const item = cart.find(i => String(i.id) === String(editId))
+    padValue = item ? item.price.toFixed(2) : ''
+    document.getElementById('manual-desc').value = item?.name || ''
+    document.getElementById('manual-desc').disabled = true
+    document.getElementById('manual-add').innerHTML = '<i class="fa-solid fa-check"></i> Preis übernehmen'
+    document.getElementById('manual-amount-display').textContent = item ? item.price.toFixed(2) : '0.00'
+  } else {
+    padValue = ''
+    document.getElementById('manual-desc').value = ''
+    document.getElementById('manual-desc').disabled = false
+    document.getElementById('manual-add').innerHTML = '<i class="fa-solid fa-plus"></i> Hinzufügen'
+    document.getElementById('manual-amount-display').textContent = '0.00'
+  }
   document.getElementById('manual-overlay').classList.add('visible')
 }
 
 function closeManual() {
   document.getElementById('manual-overlay').classList.remove('visible')
+  document.getElementById('manual-desc').disabled = false
+  document.getElementById('manual-add').innerHTML = '<i class="fa-solid fa-plus"></i> Hinzufügen'
+  manualEditId = null
 }
 
 function padPress(k) {
@@ -214,17 +231,64 @@ function padPress(k) {
 function addManual() {
   const price = parseFloat(padValue) || 0
   if (price <= 0) return
-  const desc = document.getElementById('manual-desc').value.trim() || 'Manuell'
-  const id = 'manual_' + Date.now()
-  cart.push({ id, name: desc, price, img: '', stock: 99, qty: 1 })
+  if (manualEditId !== null) {
+    // Editar precio de ítem existente en carrito
+    const item = cart.find(i => String(i.id) === String(manualEditId))
+    if (item) item.price = price
+  } else {
+    const desc = document.getElementById('manual-desc').value.trim() || 'Manuell'
+    const id = 'manual_' + Date.now()
+    cart.push({ id, name: desc, price, img: '', stock: 99, qty: 1 })
+  }
   beep()
   renderCart(); updateTotal()
   closeManual()
 }
 
+function saveFavorites() {
+  localStorage.setItem('kasse_favs', JSON.stringify([...favorites]))
+}
+
+function toggleFavorite(id, e) {
+  e && e.stopPropagation()
+  if (favorites.has(id)) favorites.delete(id)
+  else favorites.add(id)
+  saveFavorites()
+  // Actualizar botón estrella visible sin re-render completo
+  document.querySelectorAll(`.fav-btn[data-pid="${id}"]`).forEach(btn => {
+    btn.classList.toggle('active', favorites.has(id))
+    btn.querySelector('i').className = favorites.has(id) ? 'fa-solid fa-star' : 'fa-regular fa-star'
+  })
+  // Refrescar vista de favoritos si está activa
+  if (activeCat === '__favs__') {
+    delete catDomCache['__favs__']
+    toggleCat('__favs__')
+  }
+  // Refrescar tile de favoritos en el grid
+  renderCategories()
+}
+
 function renderCategories() {
   const tabs = document.getElementById('cat-tabs')
   tabs.innerHTML = ''
+
+  // Tile Favoritos (solo si hay alguno marcado)
+  if (favorites.size > 0) {
+    const favCount = products.filter(p => favorites.has(p.id)).length
+    const favBtn = document.createElement('button')
+    favBtn.className = 'cat-banner cat-banner-favs'
+    favBtn.innerHTML = `
+      <div class="cat-banner-bg">
+        <div class="cat-banner-icon-wrap"><i class="fa-solid fa-star"></i></div>
+      </div>
+      <div class="cat-banner-overlay">
+        <span class="cb-name">Favoriten</span>
+        <span class="cb-count">${favCount}</span>
+      </div>`
+    favBtn.onclick = () => toggleCat('__favs__')
+    tabs.appendChild(favBtn)
+  }
+
   categories.forEach((cat, idx) => {
     const count = products.filter(p => p.category === cat.slug || p.category === cat.name).length
     const cleanName = cat.name.replace(/\s*\d{4}$/, '')
@@ -261,26 +325,39 @@ function renderCategories() {
 
 const catDomCache = {}
 
-function buildCatNode(slug) {
-  const cat = categories.find(c => c.slug === slug)
-  const prods = products.filter(p => p.category === slug || (cat && p.category === cat.name))
-  const grid = document.createElement('div')
-  grid.className = 'prod-grid'
-  grid.innerHTML = prods.map(p => {
-    const imgs = getImages(p)
-    const imgTag = imgs.length > 0
-      ? `<img src="${imgs[0]}" data-pid="${p.id}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" loading="lazy" onload="prodImgLoad(this)" onerror="prodImgError(this)" alt="${p.name}">`
-      : `<div class="prod-no-img">📦</div>`
-    return `
-    <button class="prod-btn ${(p.stock || 0) === 0 ? 'out' : ''}" onclick="addToCart(${p.id})">
+function buildProdCard(p) {
+  const imgs = getImages(p)
+  const imgTag = imgs.length > 0
+    ? `<img src="${imgs[0]}" data-pid="${p.id}" data-imgs='${JSON.stringify(imgs).replace(/'/g, "&#39;")}' data-idx="0" loading="lazy" onload="prodImgLoad(this)" onerror="prodImgError(this)" alt="${p.name}">`
+    : `<div class="prod-no-img"><i class="fa-solid fa-box-open"></i></div>`
+  const isFav = favorites.has(p.id)
+  const stockOk = (p.stock || 0) > 0
+  const lowStock = stockOk && (p.stock || 0) <= 3
+  return `
+  <div class="prod-card ${stockOk ? '' : 'out'}">
+    <button class="prod-btn" onclick="addToCart(${p.id})">
       <div class="prod-img-wrap">${imgTag}</div>
       <div class="prod-info-wrap">
         <div class="pname">${p.name}</div>
         <div class="pinfo">CHF ${parseFloat(p.price).toFixed(2)}</div>
-        <div class="pstock">${(p.stock || 0) > 0 ? `${p.stock} Stk` : 'Ausverkauft'}</div>
+        <div class="pstock ${lowStock ? 'low' : ''}">${stockOk ? `${p.stock} Stk${lowStock ? ' ⚠' : ''}` : 'Ausverkauft'}</div>
       </div>
-    </button>`
-  }).join('')
+    </button>
+    <button class="fav-btn ${isFav ? 'active' : ''}" data-pid="${p.id}" onclick="toggleFavorite(${p.id}, event)" title="${isFav ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}">
+      <i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-star"></i>
+    </button>
+  </div>`
+}
+
+function buildCatNode(slug) {
+  const prods = slug === '__favs__'
+    ? products.filter(p => favorites.has(p.id))
+    : (() => { const cat = categories.find(c => c.slug === slug); return products.filter(p => p.category === slug || (cat && p.category === cat.name)) })()
+  const grid = document.createElement('div')
+  grid.className = 'prod-grid'
+  grid.innerHTML = prods.length > 0
+    ? prods.map(p => buildProdCard(p)).join('')
+    : '<p style="padding:20px;color:var(--text3);font-size:14px;grid-column:1/-1">Keine Favoriten gespeichert</p>'
   return grid
 }
 
@@ -297,7 +374,7 @@ function toggleCat(slug) {
 
   activeCat = slug
   const cat = categories.find(c => c.slug === slug)
-  const cleanName = cat ? cat.name.replace(/\s*\d{4}$/, '') : slug
+  const cleanName = slug === '__favs__' ? 'Favoriten' : (cat ? cat.name.replace(/\s*\d{4}$/, '') : slug)
 
   // Ocultar grid de categorías, mostrar header con nombre + botón volver
   tabs.style.display = 'none'
@@ -482,12 +559,14 @@ function renderCart() {
         ${imgHtml}
         <div class="cname">
           <p>${item.name}</p>
-          <p>CHF ${item.price.toFixed(2)} / Stk</p>
+          <p class="cart-price-row">
+            <span>CHF ${item.price.toFixed(2)} / Stk</span>
+            <button class="price-edit-btn" onclick="openManual('${item.id}')"><i class="fa-solid fa-pen"></i></button>
+          </p>
         </div>
         <button class="del-btn" onclick="updateQty('${item.id}',-${item.qty})"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="cart-item-bottom">
-        <span class="unit-price">${item.qty} × CHF ${item.price.toFixed(2)}</span>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="updateQty('${item.id}',-1)">−</button>
           <span class="qty-val">${item.qty}</span>
